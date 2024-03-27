@@ -1,0 +1,1 @@
+--bvh_prefix=/workspace/workspace/childtoy/annotated_sinMDM/dataset/bvh/polished_Idle --bvh_name=VAAI_DIRECT_01_01_a_M1 --save_path=./save/nc/0101aM1

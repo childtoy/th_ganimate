@@ -1,0 +1,1 @@
+--dataset babel --save_path ./save/ganimator_babel_0 --sin_path ../annotated_sinMDM/dataset/babel/babel_0.pkl --device cuda:0
