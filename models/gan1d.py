@@ -12,7 +12,7 @@ class Conv1dModel(nn.Module):
         conv1d = functools.partial(SkeletonConv, neighbour_list=neighbour_list, joint_num=len(neighbour_list)) \
             if skeleton_aware else nn.Conv1d
         self.cond_encoder = nn.Conv1d(in_channels=3, out_channels=len(neighbour_list)*6, kernel_size=1)
-        self.refine_encoder = nn.Conv1d(in_channels=len(neighbour_list)*6*2, out_channels=len(neighbour_list)*6, kernel_size=1)
+        self.refine_encoder = nn.Conv1d(in_channels=len(neighbour_list)*6+3, out_channels=len(neighbour_list)*6, kernel_size=1)
         if padding == -1:
             if kernel_size % 2 == 0:
                 raise Exception('Only support odd kernel size for now')
@@ -43,15 +43,15 @@ class Conv1dModel(nn.Module):
                     seq.append(last_active)
             self.layers.append(nn.Sequential(*seq))
         self.output = None
-    def forward(self, input, prev_img=None, labels=None, cond=None, cond_requires_mask=False):
+    def forward(self, input, prev_img=None, labels=None, cond=None, cond_requires_mask=False, disc=False):
         if labels is not None : 
+            
             res_cond = self.cond_encoder(labels)
             inputs = input+res_cond
-            inputs = inputs.clone()
-
-            # inputs = torch.cat([input, res_cond], axis=1)
+            # inputs = inputs
+            # inputs = torch.cat([input, labels],dim=1)
             # inputs =self.refine_encoder(inputs)
-        print(labels)
+        
         for idx, layer in enumerate(self.layers) :
                 inputs = layer(inputs)
             # for sub_layer in layer.children():
@@ -124,6 +124,7 @@ class GAN_model:
             interpolates = alpha * self.real_res + ((1 - alpha) * self.fake_res.detach())
             interpolates.requires_grad_(True)
 
+            # disc_interpolates = self.disc(interpolates, labels=self.real_labels.detach())
             disc_interpolates = self.disc(interpolates, labels=self.real_labels.detach())
 
             gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
