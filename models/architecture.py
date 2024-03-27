@@ -30,7 +30,7 @@ def adjust_label_list(label_list, target_length):
         adjusted_labels.append(label_list[int(_ / ratio)])
     return adjusted_labels
 
-def joint_train(all_reals, gens, gan_models, all_lengths, all_labels, all_fake_labels, all_z_star, all_amps, args, loss_recorder,
+def joint_train(all_reals, gens, gan_models, all_lengths, all_labels, all_z_star, all_amps, args, loss_recorder,
                 ConGen=None):
     """
     Train several stages jointly
@@ -57,22 +57,20 @@ def joint_train(all_reals, gens, gan_models, all_lengths, all_labels, all_fake_l
                 lengths = all_lengths[m]
                 if all_labels is not None : 
                     labels = all_labels
-                    fake_labels = all_fake_labels
                 else : 
                     labels = None
-                    fake_labels = None
                 mode = 'random' if i < args.D_fact + args.G_fact else 'rec'
                 if ConGen is not None and mode != 'rec':
                     conds = ConGen.random_generate(lengths)
                 else:
                     conds = reals
-                imgs = draw_example(gens, mode, z_star, lengths, labels, fake_labels, amps, batch_size=1, args=args, all_img=True,
+                imgs = draw_example(gens, mode, z_star, lengths, labels, amps, batch_size=1, args=args, all_img=True,
                                     full_noise=args.full_noise, conds=conds)
                 imgs.append(torch.zeros_like(reals[0]))  # Trick for get the base image for stage_id = 0
 
                 for j in range(len(gan_models)):
                     stage_id = j + len(gens) - len(gan_models)
-                    gan_models[j].forward_proxy(reals[stage_id], interpolator(imgs[stage_id - 1], lengths[stage_id]), labels[stage_id], fake_labels[stage_id])
+                    gan_models[j].forward_proxy(reals[stage_id], interpolator(imgs[stage_id - 1], lengths[stage_id]), labels[stage_id])
 
                 # Discriminator : Generator : Reconstruction = args.D_fact : args.G_fact : 1
                 if i < args.D_fact:
@@ -169,7 +167,7 @@ def build_data_pyramid(img, lengths, interpolator):
     return res
 
 
-def draw_example(gens, mode, z_star, lengths, labels, fake_labels, amps, batch_size, args, all_img=False, start_level=0,
+def draw_example(gens, mode, z_star, lengths, labels, amps, batch_size, args, all_img=False, start_level=0,
                  conds=None, full_noise=False, num_cond=0, given_noise=None):
     """
     :param gens: list of generators at each stages
@@ -207,7 +205,7 @@ def draw_example(gens, mode, z_star, lengths, labels, fake_labels, amps, batch_s
         return torch.zeros((batch_size, 1, lengths[0]), device=device)
     # with torch.no_grad():
     prev_img = torch.zeros((batch_size, z_star.shape[1], lengths[0]), device=device)
-    for step, (gen, length, label, fake_label, amp) in enumerate(zip(gens, lengths, labels, fake_labels, amps)):
+    for step, (gen, length, label, amp) in enumerate(zip(gens, lengths, labels, amps)):
         current_mode = 'rec' if step < start_level else mode
         # Determine noise
         if args.no_noise:
@@ -231,7 +229,7 @@ def draw_example(gens, mode, z_star, lengths, labels, fake_labels, amps, batch_s
             prev_img = gen(noise + prev_img, prev_img, cond=conds[step], cond_requires_mask=True) + prev_img
         else:
             if labels is not None : 
-                prev_img = gen(noise + prev_img, prev_img, fake_label) + prev_img
+                prev_img = gen(noise + prev_img, prev_img, label.clone()) + prev_img
 
         # Save result and upsample for next level
         imgs.append(prev_img)

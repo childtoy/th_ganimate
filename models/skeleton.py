@@ -97,18 +97,18 @@ class SkeletonConv(nn.Module):
 
     def forward(self, inputs):
         # if isinstance(inputs, tuple) :
-        input, label = inputs
+        # input, label = inputs
 
         # input, labels = inputs
         weight_masked = self.weight * self.mask
-        res = F.conv1d(F.pad(input, self._padding_repeated_twice, mode=self.padding_mode),
+        res = F.conv1d(F.pad(inputs, self._padding_repeated_twice, mode=self.padding_mode),
                        weight_masked, self.bias, self.stride,
                         0, self.dilation, self.groups) 
-        if label is not None : 
-            res_cond = F.conv1d(F.pad(label, self._padding_repeated_twice, mode=self.padding_mode),
-                       self.weight_cond, self.bias_cond, self.stride,
-                        0, self.dilation, self.groups) 
-            res = res + res_cond
+        # if label is not None : 
+        #     res_cond = F.conv1d(F.pad(label, self._padding_repeated_twice, mode=self.padding_mode),
+        #                self.weight_cond, self.bias_cond, self.stride,
+        #                 0, self.dilation, self.groups) 
+        #     res = res + res_cond
         return res
 
     def __repr__(self):

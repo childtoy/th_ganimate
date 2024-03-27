@@ -11,7 +11,8 @@ class Conv1dModel(nn.Module):
         super(Conv1dModel, self).__init__()
         conv1d = functools.partial(SkeletonConv, neighbour_list=neighbour_list, joint_num=len(neighbour_list)) \
             if skeleton_aware else nn.Conv1d
-        
+        self.cond_encoder = nn.Conv1d(in_channels=3, out_channels=len(neighbour_list)*6, kernel_size=1)
+        self.refine_encoder = nn.Conv1d(in_channels=len(neighbour_list)*6*2, out_channels=len(neighbour_list)*6, kernel_size=1)
         if padding == -1:
             if kernel_size % 2 == 0:
                 raise Exception('Only support odd kernel size for now')
@@ -43,22 +44,29 @@ class Conv1dModel(nn.Module):
             self.layers.append(nn.Sequential(*seq))
         self.output = None
     def forward(self, input, prev_img=None, labels=None, cond=None, cond_requires_mask=False):
-        inputs = input, labels
-        
+        if labels is not None : 
+            res_cond = self.cond_encoder(labels)
+            inputs = input+res_cond
+            inputs = inputs.clone()
+
+            # inputs = torch.cat([input, res_cond], axis=1)
+            # inputs =self.refine_encoder(inputs)
+        print(labels)
         for idx, layer in enumerate(self.layers) :
-            for sub_layer in layer.children():
-                if isinstance(sub_layer, SkeletonConv):
-                    is_skelconv = True 
-                    break
-                else :
-                    is_skelconv = False
-            if is_skelconv : 
-                input = layer(inputs)
-            else :                 
-                inputs = input
-                input = layer(inputs)
-            inputs = input, labels
-        self.output = input
+                inputs = layer(inputs)
+            # for sub_layer in layer.children():
+            #     if isinstance(sub_layer, SkeletonConv):
+            #         is_skelconv = True 
+            #         break
+            #     else :
+            #         is_skelconv = False
+            # if is_skelconv : 
+            #     input = layer(inputs)
+            # else :                 
+            #     inputs = input
+            #     input = layer(inputs)
+            # inputs = input, labels
+        self.output = inputs
         return self.output
 
 
@@ -87,7 +95,7 @@ class GAN_model:
     def disc_requires_grad_(self, requires_grad):
         for para in self.disc.parameters():
             para.requires_grad = requires_grad
-    def backward_D_basic(self, netD, real, fake):
+    def backward_D_basic(self, netD, real, fake, real_labels):
         """Calculate GAN loss for the discriminator
         Parameters:
             netD (network)      -- the discriminator D
@@ -97,10 +105,10 @@ class GAN_model:
         We also call loss_D.backward() to calculate the gradients.
         """
         # Real
-        pred_real = netD(real, self.real_labels)
+        pred_real = netD(real, labels=real_labels.detach())
         loss_D_real = self.criterion_gan(pred_real, True)
         # Fake
-        pred_fake = netD(fake.detach(), self.fake_labels.clone().detach())
+        pred_fake = netD(fake.detach(), labels=real_labels.detach())
         loss_D_fake = self.criterion_gan(pred_fake, False)
         # Combined loss and calculate gradients
         loss_D = (loss_D_real + loss_D_fake) * 0.5
@@ -109,25 +117,25 @@ class GAN_model:
 
     def backward_D(self):
         fake = self.fake_pool.query(self.fake_res.detach())
-        self.loss_D = self.backward_D_basic(self.disc, self.real_res, fake)
+        self.loss_D = self.backward_D_basic(self.disc, self.real_res, fake, self.real_labels)
 
-        # if self.gan_mode == 'wgan-gp':
-        #     alpha = torch.rand((1,), device=self.device)
-        #     interpolates = alpha * self.real_res + ((1 - alpha) * self.fake_res.detach())
-        #     interpolates.requires_grad_(True)
+        if self.gan_mode == 'wgan-gp':
+            alpha = torch.rand((1,), device=self.device)
+            interpolates = alpha * self.real_res + ((1 - alpha) * self.fake_res.detach())
+            interpolates.requires_grad_(True)
 
-        #     disc_interpolates = self.disc(interpolates, )
+            disc_interpolates = self.disc(interpolates, labels=self.real_labels.detach())
 
-        #     gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
-        #                                     grad_outputs=torch.ones_like(disc_interpolates),
-        #                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
-        #     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-        #     gradient_penalty_back = gradient_penalty * self.args.lambda_gp
-        #     gradient_penalty_back.backward()
-        #     self.loss_gp = gradient_penalty
+            gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
+                                            grad_outputs=torch.ones_like(disc_interpolates),
+                                            create_graph=True, retain_graph=True, only_inputs=True)[0]
+            gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+            gradient_penalty_back = gradient_penalty * self.args.lambda_gp
+            gradient_penalty_back.backward()
+            self.loss_gp = gradient_penalty
         self.loss_gp = 0 
     def backward_G(self):
-        pred_fake = self.disc(self.fake_res, labels=self.fake_res_labels.clone())
+        pred_fake = self.disc(self.fake_res, labels=self.real_labels.detach())
         self.loss_G = self.criterion_gan(pred_fake, True)
         # self.loss_consistency = self.criterion_consistency(self.fake_res) if self.args.contact else torch.tensor(0.)
         loss_total = self.loss_G 
@@ -138,12 +146,13 @@ class GAN_model:
         if cond is not None:
             self.delta = self.gen(noise + img_base, img_base, cond=cond)
         else:
-            self.delta = self.gen(noise + img_base, img_base, labels=labels)
+            self.delta = self.gen(noise + img_base, img_base, labels=labels.clone().detach())
         self.fake_res = self.delta + img_base
-        self.fake_res_label = self.real_labels + img_base
+        # self.fake_res_label = self.real_labels + img_base
+        self.fake_res_label = labels.clone().detach()
         self.real_res = real
 
-    def forward_proxy(self, real, img_base=0, real_labels=None, fake_labels=None):
+    def forward_proxy(self, real, img_base=0, real_labels=None):
         """
         In new joint training implementation, the forward function for GAN_model will no longer be called.
         This is a proxy function to retrieve essential properties needed for the backward step.
@@ -154,8 +163,7 @@ class GAN_model:
         self.real_res = real
         self.real_labels = real_labels
         self.fake_res = self.delta + img_base
-        self.fake_labels = fake_labels
-        self.fake_res_labels = torch.cat([self.real_labels[:,:,:real_labels.shape[-1]//2],self.fake_labels[:,:,real_labels.shape[-1]//2:]],axis=-1)
+    
     def optimize_parameters(self, gen=True, disc=True, rec=False):
 
         if self.args.no_gan:

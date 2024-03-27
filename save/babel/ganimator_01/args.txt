@@ -1,1 +1,1 @@
---dataset babel --sin_path /workspace/workspace/childtoy/annotated_sinMDM/dataset/babel/babel_0.pkl --bvh_name= --save_path=./save/babel/ganimator_01
+--dataset babel --sin_path dataset/babel/babel_0.pkl --bvh_name= --save_path=./save/babel/ganimator_01

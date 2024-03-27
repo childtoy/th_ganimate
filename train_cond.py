@@ -19,6 +19,7 @@ import torch.nn.functional as F
 
 def main():
     start_time = time.time()
+    torch.autograd.set_detect_anomaly(True)
 
     parser = TrainOptionParser()
     args = parser.parse_args()
@@ -49,7 +50,6 @@ def main():
     min_len = 10000
 
     adjusted_label_list = []
-    adjusted_fake_label_list = []
     
     for i in range(len(multiple_data)):
         new_length = get_pyramid_lengths(args, multiple_data[i].shape[-1])
@@ -63,10 +63,6 @@ def main():
         adjusted_labels = torch.Tensor(adjusted_labels)
         adjusted_labels = F.one_hot(torch.Tensor(adjusted_labels).to(torch.int64), num_classes=3).to(args.device).unsqueeze(0).permute(0,2,1).float()
         adjusted_label_list.append(adjusted_labels)
-        # adjusted_labels = adjust_label_list(np.random.randint(0,3,(50,)), lens)
-        adjusted_fake_labels = torch.Tensor(np.random.randint(0,3,(lens,)))
-        adjusted_fake_labels = F.one_hot(adjusted_fake_labels.to(torch.int64), num_classes=3).to(args.device).unsqueeze(0).permute(0,2,1).float()
-        adjusted_fake_label_list.append(adjusted_fake_labels)
 
 
     for i in range(len(multiple_data)):
@@ -123,7 +119,7 @@ def main():
     for group in training_groups:
         curr_stage = last_stage + len(group)
         group_gan_models = [gans[i] for i in group]
-        joint_train(reals, gens[:curr_stage], group_gan_models, lengths, adjusted_label_list, adjusted_fake_label_list,
+        joint_train(reals, gens[:curr_stage], group_gan_models, lengths, adjusted_label_list,
                     z_star, amps, args, loss_recorder, ConGen)
 
         for i, gan_model in enumerate(group_gan_models):
